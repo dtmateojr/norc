@@ -1,0 +1,76 @@
+#!/bin/bash
+
+JOB_FILE=/var/spool/norc
+WAKE_INTERVAL=60
+RUNNABLE=()
+declare -A JOBS
+
+read_jobs() {
+    JOBS=()
+    set -f
+    while read _LINE; do
+        read -ra _JOB <<< "${_LINE}"
+        JOBS["${_JOB[@]:5}"]="${_JOB[@]:0:5}"
+    done < $JOB_FILE
+    set +f
+}
+
+get_runnable() {
+    _MATCH=0
+
+    read -ra _NOW <<< "$(date +'%M %H %d %m %u')"
+
+    set -f
+    for _JOB in "${!JOBS[@]}"; do
+        read -ra _TIME <<< $(set ${JOBS["$_JOB"]}; echo $@)
+        for i in 0 1 2 3 4; do
+            IFS=',' read -ra _T <<< "${_TIME[$i]}"
+            for t in "${_T[@]}"; do
+                if [ "$t" == "*" ]; then
+                    _MATCH=1
+                    break
+                elif [ "${t%-*}" != "$t" ]; then
+                    # this is a time range
+                    IFS='-' read -ra _RANGE <<< "$t"
+                    for j in $(seq ${_RANGE[0]} ${_RANGE[1]}) ; do
+                        if [ "$j" -eq "${_NOW[$i]}" ]; then
+                            _MATCH=1
+                            break
+                        fi
+                    done
+                    break
+                elif [ "$t" -eq "${_NOW[$i]}" ]; then
+                    _MATCH=1
+                    break
+                fi
+            done
+            if [ "${_MATCH}" -eq 0 ]; then
+                break
+            elif [ "$i" -lt 4 ]; then
+                _MATCH=0
+            fi
+        done
+        if [ "${_MATCH}" -eq 1 ]; then
+            RUNNABLE=("${RUNNABLE[@]}" "${_JOB}")
+        fi
+    done
+    set +f
+}
+
+run_jobs() {
+    get_runnable
+
+    for _JOB in "${RUNNABLE[@]}"; do
+        eval "${_JOB}" &
+    done
+}
+
+read_jobs
+
+trap "read_jobs" SIGHUP
+while true; do
+    _SEC=$(date +%S)
+    _SLEEP=$((${WAKE_INTERVAL} - $_SEC % ${WAKE_INTERVAL}))
+    sleep $_SLEEP
+    run_jobs
+done

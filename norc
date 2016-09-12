@@ -29,8 +29,26 @@ get_runnable() {
                 if [ "$t" == "*" ]; then
                     _MATCH=1
                     break
+                elif [ "${t%/*}" != "$t" ]; then
+                    _DIV="${t#*/}"
+                    _NUM="${t%/*}"
+                    if [ "${_NUM}" == "*" ]; then
+                        if [ "$((${_NOW[$i]} % ${_DIV}))" -eq 0 ]; then
+                            _MATCH=1
+                            break
+                        fi
+                    else
+                        IFS='-' read -ra _RANGE <<< "${_NUM}"
+                        for j in $(seq ${_RANGE[0]} ${_RANGE[1]}) ; do
+                            if [ "$j" -eq "${_NOW[$i]}" ]; then
+                                if [ "$(($j % ${_DIV}))" -eq 0 ]; then
+                                    _MATCH=1
+                                    break
+                                fi
+                            fi
+                        done
+                    fi
                 elif [ "${t%-*}" != "$t" ]; then
-                    # this is a time range
                     IFS='-' read -ra _RANGE <<< "$t"
                     for j in $(seq ${_RANGE[0]} ${_RANGE[1]}) ; do
                         if [ "$j" -eq "${_NOW[$i]}" ]; then
@@ -38,7 +56,6 @@ get_runnable() {
                             break
                         fi
                     done
-                    break
                 elif [ "$t" -eq "${_NOW[$i]}" ]; then
                     _MATCH=1
                     break
